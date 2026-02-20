@@ -1,0 +1,10 @@
+name: StowServerQR
+description: Generate a QR code with server credentials for easy setup in the Stow iOS/macOS app
+version: 1.0.0
+url: https://github.com/yourusername/StashPlugins
+
+ui:
+  javascript:
+    - stow-server-qr.js
+  css:
+    - stow-server-qr.css

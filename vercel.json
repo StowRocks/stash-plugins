@@ -1,0 +1,6 @@
+{
+  "buildCommand": "npm install && npm run build",
+  "outputDirectory": "_site",
+  "cleanUrls": false,
+  "trailingSlash": false
+}
