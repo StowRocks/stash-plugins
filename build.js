@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import { execSync } from 'child_process';
 import archiver from 'archiver';
 import yaml from 'js-yaml';
 
@@ -53,6 +54,9 @@ for (const pluginId of pluginDirs) {
   const fileBuffer = fs.readFileSync(zipPath);
   const hash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
 
+  // Get git hash for versioning
+  const gitHash = execSync(`git log -n 1 --pretty=format:%h -- "${pluginDir}"`, { encoding: 'utf8' }).trim();
+
   // Add to index
   index.push({
     id: pluginId,
@@ -60,7 +64,7 @@ for (const pluginId of pluginDirs) {
     metadata: {
       description: manifest.description
     },
-    version: manifest.version,
+    version: `${manifest.version}-${gitHash}`,
     date: new Date().toISOString().replace('T', ' ').replace(/\.\d+Z$/, ''),
     path: `${pluginId}.zip`,
     sha256: hash
