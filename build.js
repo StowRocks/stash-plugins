@@ -61,7 +61,7 @@ for (const pluginId of pluginDirs) {
       description: manifest.description
     },
     version: manifest.version,
-    date: new Date().toISOString().split('T')[0],
+    date: new Date().toISOString().replace('T', ' ').replace(/\.\d+Z$/, ''),
     path: `${pluginId}.zip`,
     sha256: hash
   });
