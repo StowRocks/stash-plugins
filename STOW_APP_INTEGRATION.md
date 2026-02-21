@@ -1,28 +1,14 @@
 # Stow App: QR Code Server Setup Integration
 
-## Objective
-Implement `stow://` URL scheme handling to allow users to scan a QR code from the StowServerQR Stash plugin and automatically add/update server credentials in the Stow iOS/macOS app.
+## Overview
 
-## Requirements
+The **StowServerQR** Stash plugin adds a "📱 Stow QR" button to the Security settings page (Settings → Security), next to the existing "Generate API Key" and "Clear API Key" buttons. Clicking it displays a QR code containing the server's name, URL, and API key.
 
-### 1. Register URL Scheme
-Add to `Info.plist`:
-```xml
-<key>CFBundleURLTypes</key>
-<array>
-  <dict>
-    <key>CFBundleURLName</key>
-    <string>Stow Server Setup</string>
-    <key>CFBundleURLSchemes</key>
-    <array>
-      <string>stow</string>
-    </array>
-  </dict>
-</array>
-```
+The Stow app needs to handle scanning this QR code and automatically adding or updating the server.
 
-### 2. QR Code Data Format
-The QR code contains JSON:
+## QR Code Data Format
+
+The QR code contains a JSON string:
 ```json
 {
   "name": "My Stash Server",
@@ -31,99 +17,161 @@ The QR code contains JSON:
 }
 ```
 
-### 3. URL Scheme Format
-When iOS/macOS detects the QR code, it should trigger:
-```
-stow://add-server?data=<base64_encoded_json>
+## Implementation
+
+### 1. Register URL Scheme
+
+Add to the app's `Info.plist`:
+```xml
+<key>CFBundleURLTypes</key>
+<array>
+  <dict>
+    <key>CFBundleURLName</key>
+    <string>rocks.stow</string>
+    <key>CFBundleURLSchemes</key>
+    <array>
+      <string>stow</string>
+    </array>
+  </dict>
+</array>
 ```
 
-### 4. Implementation Requirements
+### 2. Define QR Payload Model
 
-**Handle URL in App:**
 ```swift
-.onOpenURL { url in
+struct StowQRPayload: Codable {
+    let name: String
+    let url: String
+    let apiKey: String
+}
+```
+
+### 3. Handle URL in StowApp
+
+Add `.onOpenURL` to `RootView()` in each platform's `StowApp.swift`:
+
+```swift
+RootView()
+    .onOpenURL { url in
+        handleStowURL(url)
+    }
+```
+
+```swift
+private func handleStowURL(_ url: URL) {
     guard url.scheme == "stow",
           url.host == "add-server",
           let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
           let dataParam = components.queryItems?.first(where: { $0.name == "data" })?.value,
           let jsonData = Data(base64Encoded: dataParam),
-          let serverInfo = try? JSONDecoder().decode(ServerInfo.self, from: jsonData)
+          let payload = try? JSONDecoder().decode(StowQRPayload.self, from: jsonData)
     else { return }
-    
-    handleServerSetup(serverInfo)
+
+    // Check if server with same URL already exists
+    let settings = SettingsStore.shared
+    if let existing = settings.servers.first(where: { $0.url == Server.cleanURL(payload.url) }) {
+        // Update existing server
+        var updated = existing
+        updated.update(
+            name: payload.name,
+            url: payload.url,
+            apiKey: payload.apiKey,
+            syncThumbnails: existing.syncThumbnails,
+            syncPreviews: existing.syncPreviews,
+            syncFrequency: existing.syncFrequency,
+            isEnabled: existing.isEnabled
+        )
+        settings.updateServer(updated)
+    } else {
+        // Add new server
+        let server = Server(
+            name: payload.name,
+            url: payload.url,
+            apiKey: payload.apiKey
+        )
+        settings.addServer(server)
+    }
 }
 ```
 
-**Logic:**
-1. Parse base64-encoded JSON from URL
-2. Check if server with same URL already exists
-3. If exists: Show "Update Server?" dialog with changes highlighted
-4. If new: Show "Add Server?" dialog with server details
-5. On confirm: Save/update server credentials
-6. Navigate to server or show success message
+### 4. Update StowServerQR Plugin QR Data
 
-**UI Flow:**
+The plugin currently encodes raw JSON in the QR code. For URL scheme handling, it should encode as:
+
 ```
-Scan QR → iOS opens Stow app → Alert appears:
+stow://add-server?data=<base64_encoded_json>
+```
 
+This way, when iOS/macOS scans the QR code, it recognizes the `stow://` scheme and opens the Stow app directly.
+
+### 5. Alternative: Direct JSON Scanning
+
+If you prefer not to use a URL scheme, the app can also handle raw JSON QR codes via a dedicated QR scanner view within the app:
+
+```swift
+// In a QR scanner view
+func handleScannedCode(_ code: String) {
+    guard let data = code.data(using: .utf8),
+          let payload = try? JSONDecoder().decode(StowQRPayload.self, from: data)
+    else { return }
+
+    // Same add/update logic as above
+}
+```
+
+### 6. Confirmation UI
+
+Show a confirmation dialog before adding/updating:
+
+```
 ┌─────────────────────────────────┐
 │  Add Stash Server?              │
 │                                 │
 │  Name: Home Stash               │
-│  URL: http://192.168.1.10:9999  │
+│  URL:  http://192.168.1.10:9999 │
 │  API Key: ****...1234           │
 │                                 │
-│  [Cancel]  [Add Server]         │
+│  [Cancel]        [Add Server]   │
 └─────────────────────────────────┘
 
-OR (if URL exists):
+OR (if URL already exists):
 
 ┌─────────────────────────────────┐
 │  Update Existing Server?        │
 │                                 │
-│  Server: Home Stash             │
-│  URL: http://192.168.1.10:9999  │
+│  Name: Home Stash               │
+│  URL:  http://192.168.1.10:9999 │
+│  API Key: Updated               │
 │                                 │
-│  Changes:                       │
-│  • Name: "Old Name" → "Home..."│
-│  • API Key: Updated             │
-│                                 │
-│  [Cancel]  [Update]             │
+│  [Cancel]        [Update]       │
 └─────────────────────────────────┘
 ```
 
-### 5. Security Considerations
-- Validate URL format (must be http:// or https://)
-- Validate API key is not empty
-- Show masked API key in UI (show last 4 chars only)
-- Warn if replacing existing server
-- Test connection before saving (optional but recommended)
+## Security Considerations
 
-### 6. Error Handling
-- Invalid QR data → Show "Invalid QR code" alert
-- Malformed JSON → Show "Could not read server data" alert
-- Network unreachable → Show "Cannot connect to server" warning (but allow saving)
+- Validate URL format (must be `http://` or `https://`)
+- Show masked API key in confirmation UI (last 4 chars only)
+- The plugin already warns users and auto-hides the QR code after 60 seconds
 
-### 7. Testing
-1. Generate QR code from Stash plugin
-2. Scan with iPhone camera
-3. Verify Stow app opens
-4. Verify server details shown correctly
-5. Test adding new server
-6. Test updating existing server (scan same URL twice)
-7. Test canceling
-8. Test with invalid QR data
+## Existing Stow Models Reference
 
-## Implementation Notes
-- Use existing `ServerCredentials` model (or create if needed)
-- Integrate with existing server management code
-- Ensure persistence (UserDefaults/CoreData)
-- Handle both iOS and macOS (camera vs manual URL entry)
+The `Server` model (`Stow/Models/Server.swift`):
+- `id: UUID`
+- `name: String`
+- `url: String` (auto-cleaned, no trailing slash, no `/graphql`)
+- `apiKey: String` (stored in Keychain via `KeychainManager`)
+- `syncThumbnails: Bool` (default: `true`)
+- `syncPreviews: Bool` (default: `false`)
+- `syncFrequency: SyncFrequency` (default: `.always`)
+- `isEnabled: Bool` (default: `true`)
 
-## Alternative: Direct JSON in QR
-If base64 encoding is problematic, the QR could contain the JSON directly:
-```
-stow://add-server?name=Home%20Stash&url=http://...&apiKey=...
-```
+## Testing
 
-But base64 is cleaner and handles special characters better.
+1. Open Stash → Settings → Security
+2. Click "📱 Stow QR" button
+3. Scan QR code with iPhone/iPad camera
+4. Verify Stow app opens with confirmation dialog
+5. Confirm adding server
+6. Verify server appears in Stow's server list
+7. Scan same QR again → verify update flow
+8. Test with invalid/malformed QR data
