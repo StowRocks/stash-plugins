@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import { execSync } from 'child_process';
 import archiver from 'archiver';
 import yaml from 'js-yaml';
+import esbuild from 'esbuild';
 
 const PLUGINS_DIR = './plugins';
 const OUTPUT_DIR = '_site';
@@ -32,17 +33,34 @@ for (const pluginId of pluginDirs) {
 
   console.log(`📦 Processing ${pluginId}...`);
 
+  // Bundle .src.js files with esbuild
+  const srcFiles = fs.readdirSync(pluginDir).filter(f => f.endsWith('.src.js'));
+  for (const srcFile of srcFiles) {
+    const outFile = srcFile.replace('.src.js', '.js');
+    await esbuild.build({
+      entryPoints: [path.join(pluginDir, srcFile)],
+      bundle: true,
+      minify: true,
+      format: 'iife',
+      outfile: path.join(pluginDir, outFile),
+    });
+    console.log(`  📎 Bundled ${srcFile} → ${outFile}`);
+  }
+
   // Read manifest
   const manifestContent = fs.readFileSync(manifestPath, 'utf8');
   const manifest = yaml.load(manifestContent);
 
-  // Create zip
+  // Create zip (exclude .src.js files)
   const zipPath = path.join(OUTPUT_DIR, `${pluginId}.zip`);
   const output = fs.createWriteStream(zipPath);
   const archive = archiver('zip', { zlib: { level: 9 } });
 
   archive.pipe(output);
-  archive.directory(pluginDir, false);
+  archive.glob('**/*', {
+    cwd: pluginDir,
+    ignore: ['*.src.js'],
+  });
   
   await new Promise((resolve, reject) => {
     output.on('close', resolve);
