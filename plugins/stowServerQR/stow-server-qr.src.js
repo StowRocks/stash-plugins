@@ -73,8 +73,9 @@ import QRCode from "qrcode";
 
     injected = true;
 
-    // Add QR button next to existing buttons
-    const btnContainer = apiKeyDiv.querySelector("div:last-child");
+    // Find the button container (same div as Generate/Clear buttons)
+    const buttons = apiKeyDiv.querySelectorAll("button");
+    const btnContainer = buttons.length ? buttons[0].parentElement : apiKeyDiv.querySelector("div:last-child");
     const btn = document.createElement("button");
     btn.id = "stow-qr-btn";
     btn.className = "btn btn-primary stow-qr-btn";
