@@ -2,6 +2,10 @@
   margin-left: 0.5rem;
 }
 
+#apikey > div:last-child {
+  flex-shrink: 0;
+}
+
 .stow-qr-panel {
   display: flex;
   flex-direction: column;
