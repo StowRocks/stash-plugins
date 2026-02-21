@@ -1,67 +1,56 @@
 # StowServerQR
 
-Generate a QR code containing your Stash server credentials for easy setup in the Stow iOS/macOS app.
-
-## Features
-
-- **Auto-detection**: Automatically detects your server URL
-- **Secure**: Includes API key for authenticated access
-- **Customizable**: Set a friendly server name
-- **Security warnings**: Clear warnings about API key exposure
-- **Auto-hide**: QR code automatically hides after 60 seconds
-- **One-scan setup**: Scan with your device to instantly add server to Stow app
+Generate a QR code containing your Stash server credentials for easy setup in the [Stow](https://stow.rocks) iOS/macOS app.
 
 ## Installation
 
-1. Add plugin source to Stash:
+1. Add plugin source in Stash:
    - Go to **Settings → Plugins → Available Plugins**
    - Click **Add Source**
    - Enter: `https://plugins.stow.rocks/index.yml`
    - Click **Reload**
 
-2. Install StowServerQR:
-   - Find "StowServerQR" in the list
-   - Click **Install**
+2. Find "StowServerQR" and click **Install**
 
 ## Usage
 
-1. Navigate to **Settings → Plugins → Stow QR Code**
-2. Enter a friendly name for your server (e.g., "Home Stash")
-3. Click **Show QR Code**
-4. Scan the QR code with your iPhone, iPad, or Mac camera
-5. The Stow app will open and prompt you to add the server
+1. Navigate to **Settings → Security**
+2. Find the "📱 Stow QR" button next to "Generate API Key"
+3. Enter a friendly server name
+4. Click **📱 Stow QR** to display the QR code
+5. Scan with your iPhone, iPad, or Mac camera
+6. The Stow app opens and prompts you to add the server
 
 ## Security
 
-⚠️ **Important**: The QR code contains your API key. Only scan it on devices you trust.
+⚠️ The QR code contains your API key. Only scan on devices you trust.
 
-The plugin includes several security features:
 - QR code is hidden by default
-- Must click "Show QR Code" to display
 - Auto-hides after 60 seconds
-- Clear security warnings
+- Clear security warning displayed
 
-## Stow App Integration
+## QR Code Data Format
 
-The QR code contains JSON data:
+The QR code encodes a JSON string with three fields:
+
 ```json
 {
   "name": "My Stash Server",
   "url": "http://192.168.1.10:9999",
-  "apiKey": "your-api-key-here"
+  "apiKey": "eyJhbGciOiJIUzI1NiIs..."
 }
 ```
 
-The Stow app should:
-1. Register URL scheme: `stow://`
-2. Handle deep link with QR data
-3. Parse JSON and show "Add Server" dialog
-4. Check if URL exists and offer to update instead
+| Field    | Type   | Description                                    |
+|----------|--------|------------------------------------------------|
+| `name`   | string | User-defined server display name               |
+| `url`    | string | Stash server URL (auto-detected from browser)  |
+| `apiKey` | string | Stash API key (from Settings → Security)       |
 
 ## Requirements
 
 - Stash v0.20.0 or later
-- API key configured in Stash settings
+- API key configured in Stash (Settings → Security → Generate API Key)
 
 ## License
 
