@@ -4,10 +4,14 @@
   "description": "Stash plugins for the Stow ecosystem",
   "type": "module",
   "scripts": {
-    "build": "node build.js"
+    "build": "node build.js",
+    "prepare": "husky"
   },
   "devDependencies": {
+    "@commitlint/cli": "^20.4.2",
+    "@commitlint/config-conventional": "^20.4.2",
     "archiver": "^7.0.1",
+    "husky": "^9.1.7",
     "js-yaml": "^4.1.0"
   }
 }
