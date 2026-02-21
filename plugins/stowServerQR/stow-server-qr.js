@@ -2,180 +2,132 @@
   "use strict";
 
   const PLUGIN_ID = "stowServerQR";
-  const ROUTE_PATH = "/settings/plugins/stow-qr";
+  const QR_LIB_URL = "https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js";
 
   let qrVisible = false;
   let hideTimer = null;
+  let injected = false;
 
-  function createSettingsPage() {
-    const serverUrl = window.location.origin;
-    const serverName = localStorage.getItem(`${PLUGIN_ID}_serverName`) || "My Stash Server";
-
-    return `
-      <div class="stow-qr-container">
-        <h2>Stow Server QR Code</h2>
-        <p class="stow-qr-description">
-          Scan this QR code with your iPhone, iPad, or Mac to automatically add this server to the Stow app.
-        </p>
-
-        <div class="stow-qr-config">
-          <label>
-            Server Name:
-            <input type="text" id="stow-server-name" value="${serverName}" placeholder="My Stash Server" />
-          </label>
-        </div>
-
-        <div class="stow-qr-warning">
-          <strong>⚠️ Security Warning</strong>
-          <p>This QR code contains your API key. Only scan on devices you trust.</p>
-        </div>
-
-        <div id="stow-qr-display" class="stow-qr-display" style="display: none;">
-          <div id="stow-qr-code"></div>
-          <div id="stow-qr-timer" class="stow-qr-timer"></div>
-          <button id="stow-qr-hide" class="btn btn-secondary">Hide QR Code</button>
-        </div>
-
-        <button id="stow-qr-show" class="btn btn-primary">Show QR Code</button>
-      </div>
-    `;
-  }
-
-  async function getApiKey() {
-    // Try to get API key from Stash configuration
-    const query = `query Configuration { configuration { general { apiKey } } }`;
-    
-    try {
-      const response = await fetch('/graphql', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query })
-      });
-      
-      const data = await response.json();
-      return data?.data?.configuration?.general?.apiKey || '';
-    } catch (e) {
-      console.error('Failed to fetch API key:', e);
-      return '';
-    }
-  }
-
-  function generateQRCode(data) {
-    const qrContainer = document.getElementById('stow-qr-code');
-    qrContainer.innerHTML = '';
-    
-    // Use QRCode.js from CDN
-    new QRCode(qrContainer, {
-      text: JSON.stringify(data),
-      width: 300,
-      height: 300,
-      colorDark: "#000000",
-      colorLight: "#ffffff",
-      correctLevel: QRCode.CorrectLevel.H
+  function loadQRLib() {
+    if (window.QRCode) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = QR_LIB_URL;
+      s.onload = resolve;
+      s.onerror = reject;
+      document.head.appendChild(s);
     });
   }
 
-  function startHideTimer() {
-    const timerEl = document.getElementById('stow-qr-timer');
-    let seconds = 60;
-
-    const updateTimer = () => {
-      timerEl.textContent = `Auto-hiding in ${seconds}s`;
-      seconds--;
-
-      if (seconds < 0) {
-        hideQRCode();
-      } else {
-        hideTimer = setTimeout(updateTimer, 1000);
-      }
-    };
-
-    updateTimer();
+  function getServerName() {
+    return localStorage.getItem(`${PLUGIN_ID}_serverName`) || location.hostname;
   }
 
-  function hideQRCode() {
-    if (hideTimer) {
-      clearTimeout(hideTimer);
-      hideTimer = null;
-    }
-    
-    document.getElementById('stow-qr-display').style.display = 'none';
-    document.getElementById('stow-qr-show').style.display = 'block';
+  function setServerName(name) {
+    localStorage.setItem(`${PLUGIN_ID}_serverName`, name);
+  }
+
+  function hideQR() {
+    if (hideTimer) clearTimeout(hideTimer);
+    hideTimer = null;
+    const panel = document.getElementById("stow-qr-panel");
+    if (panel) panel.style.display = "none";
+    const btn = document.getElementById("stow-qr-btn");
+    if (btn) btn.style.display = "";
     qrVisible = false;
   }
 
-  async function showQRCode() {
-    const serverName = document.getElementById('stow-server-name').value || "My Stash Server";
-    const serverUrl = window.location.origin;
-    const apiKey = await getApiKey();
+  function showQR() {
+    const apiKeyEl = document.querySelector("#apikey .value.text-break");
+    const apiKey = apiKeyEl?.textContent?.trim() || "";
 
-    localStorage.setItem(`${PLUGIN_ID}_serverName`, serverName);
+    const nameInput = document.getElementById("stow-qr-name");
+    const name = nameInput?.value || getServerName();
+    setServerName(name);
 
-    const qrData = {
-      name: serverName,
-      url: serverUrl,
-      apiKey: apiKey
-    };
+    const data = JSON.stringify({
+      name,
+      url: location.origin,
+      apiKey,
+    });
 
-    generateQRCode(qrData);
-    
-    document.getElementById('stow-qr-display').style.display = 'flex';
-    document.getElementById('stow-qr-show').style.display = 'none';
+    const codeEl = document.getElementById("stow-qr-code");
+    codeEl.innerHTML = "";
+    new QRCode(codeEl, {
+      text: data,
+      width: 256,
+      height: 256,
+      correctLevel: QRCode.CorrectLevel.H,
+    });
+
+    document.getElementById("stow-qr-panel").style.display = "";
+    document.getElementById("stow-qr-btn").style.display = "none";
     qrVisible = true;
 
-    startHideTimer();
+    // Auto-hide countdown
+    let seconds = 60;
+    const timerEl = document.getElementById("stow-qr-timer");
+    const tick = () => {
+      timerEl.textContent = `Auto-hiding in ${seconds}s`;
+      if (seconds-- <= 0) return hideQR();
+      hideTimer = setTimeout(tick, 1000);
+    };
+    tick();
   }
 
-  function setupEventListeners() {
-    document.getElementById('stow-qr-show')?.addEventListener('click', showQRCode);
-    document.getElementById('stow-qr-hide')?.addEventListener('click', hideQRCode);
-  }
+  function inject() {
+    const apiKeyDiv = document.getElementById("apikey");
+    if (!apiKeyDiv || injected) return;
+    if (document.getElementById("stow-qr-btn")) return;
 
-  function loadQRCodeLibrary() {
-    if (window.QRCode) return Promise.resolve();
+    injected = true;
 
-    return new Promise((resolve, reject) => {
-      const script = document.createElement('script');
-      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js';
-      script.onload = resolve;
-      script.onerror = reject;
-      document.head.appendChild(script);
+    // Add QR button next to existing buttons
+    const btnContainer = apiKeyDiv.querySelector("div:last-child");
+    const btn = document.createElement("button");
+    btn.id = "stow-qr-btn";
+    btn.className = "btn btn-primary stow-qr-btn";
+    btn.textContent = "📱 Stow QR";
+    btn.addEventListener("click", async () => {
+      await loadQRLib();
+      showQR();
+    });
+    btnContainer.appendChild(btn);
+
+    // Add QR panel below apikey section
+    const panel = document.createElement("div");
+    panel.id = "stow-qr-panel";
+    panel.className = "stow-qr-panel";
+    panel.style.display = "none";
+    panel.innerHTML = `
+      <div class="stow-qr-warning">
+        ⚠️ This QR code contains your API key. Only scan on devices you trust.
+      </div>
+      <label class="stow-qr-name-label">
+        Server Name
+        <input type="text" id="stow-qr-name" class="text-input form-control" value="${getServerName()}" />
+      </label>
+      <div id="stow-qr-code"></div>
+      <div id="stow-qr-timer" class="stow-qr-timer"></div>
+      <button id="stow-qr-hide" class="btn btn-secondary">Hide</button>
+    `;
+    apiKeyDiv.after(panel);
+
+    panel.querySelector("#stow-qr-hide").addEventListener("click", hideQR);
+    panel.querySelector("#stow-qr-name").addEventListener("change", (e) => {
+      setServerName(e.target.value);
+      if (qrVisible) showQR();
     });
   }
 
-  function init() {
-    // Wait for Stash to be ready
-    const checkStash = setInterval(() => {
-      if (window.stash) {
-        clearInterval(checkStash);
-        
-        // Register settings page
-        window.stash.addEventListener('page:settings', async () => {
-          const settingsContent = document.querySelector('.settings-content');
-          if (settingsContent && window.location.pathname === ROUTE_PATH) {
-            await loadQRCodeLibrary();
-            settingsContent.innerHTML = createSettingsPage();
-            setupEventListeners();
-          }
-        });
+  // Watch for Security settings tab
+  const observer = new MutationObserver(() => {
+    if (document.getElementById("apikey")) {
+      inject();
+    } else {
+      injected = false;
+    }
+  });
 
-        // Add menu item
-        window.stash.addEventListener('stash:location', () => {
-          if (window.location.pathname.startsWith('/settings')) {
-            const pluginsMenu = document.querySelector('a[href="/settings/plugins"]');
-            if (pluginsMenu && !document.getElementById('stow-qr-menu-item')) {
-              const menuItem = document.createElement('a');
-              menuItem.id = 'stow-qr-menu-item';
-              menuItem.href = ROUTE_PATH;
-              menuItem.className = 'nav-link';
-              menuItem.textContent = 'Stow QR Code';
-              pluginsMenu.parentElement.appendChild(menuItem);
-            }
-          }
-        });
-      }
-    }, 100);
-  }
-
-  init();
+  observer.observe(document.body, { childList: true, subtree: true });
 })();
