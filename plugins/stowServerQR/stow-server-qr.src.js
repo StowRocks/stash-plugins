@@ -40,10 +40,12 @@ import QRCode from "qrcode";
       apiKey,
     });
 
+    const qrContent = "stow://add-server?data=" + btoa(data);
+
     const codeEl = document.getElementById("stow-qr-code");
     codeEl.innerHTML = "";
 
-    const canvas = await QRCode.toCanvas(data, {
+    const canvas = await QRCode.toCanvas(qrContent, {
       width: 256,
       margin: 2,
       errorCorrectionLevel: "H",
